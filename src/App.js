@@ -10,20 +10,15 @@ import "./App.css";
 
 function App() {
   const [users, setUsers] = useState([
-    { username: "admin", password: "1234", role: "admin" }, // default admin
+    { username: "admin", password: "1234", role: "admin" }
   ]);
-
-  // Store employees per username
   const [employeeData, setEmployeeData] = useState({});
   const [authUser, setAuthUser] = useState(null);
 
   return (
     <Router>
       <Routes>
-        {/* Home Page */}
         <Route path="/" element={<Home />} />
-
-        {/* Login Pages */}
         <Route
           path="/admin-login"
           element={<AdminLogin users={users} setAuthUser={setAuthUser} />}
@@ -32,8 +27,6 @@ function App() {
           path="/employee-login"
           element={<EmployeeLogin users={users} setAuthUser={setAuthUser} />}
         />
-
-        {/* Admin Dashboard (Protected) */}
         <Route
           path="/admin"
           element={
@@ -47,8 +40,6 @@ function App() {
             </PrivateRoute>
           }
         />
-
-        {/* Employee Dashboard (Protected) */}
         <Route
           path="/employee"
           element={
