@@ -1,0 +1,66 @@
+.admin-container {
+  padding: 30px;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg, #f0f9ff, #cbebff);
+  min-height: 100vh;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logout-btn {
+  background: #ff5252;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.section {
+  margin-top: 30px;
+  padding: 20px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+}
+
+.form-inline {
+  display: flex;
+  gap: 10px;
+}
+
+input, button {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+button {
+  background: #4cafef;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #2196f3;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+
+th {
+  background: #4cafef;
+  color: white;
+}
