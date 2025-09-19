@@ -1,22 +1,16 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Login.css";
 
-function EmployeeLogin({ users, setAuthUser }) {
+const API_BASE = "https://chv-help-backend.vercel.app";
+
+function EmployeeLogin({ setAuthUser }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const boxRef = useRef(null);
   const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
-
-  useEffect(() => {
-    const employees = JSON.parse(localStorage.getItem("employees")) || [];
-    if (!employees.find((emp) => emp.username === "test")) {
-      const updated = [...employees, { username: "test", password: "1234" }];
-      localStorage.setItem("employees", JSON.stringify(updated));
-    }
-  }, []);
 
   const handleMove = (e) => {
     const rect = boxRef.current.getBoundingClientRect();
@@ -29,21 +23,32 @@ function EmployeeLogin({ users, setAuthUser }) {
 
   const resetTilt = () => setTilt({ rx: 0, ry: 0 });
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-    const employees = JSON.parse(localStorage.getItem("employees")) || [];
-    const found = employees.find(
-      (emp) => emp.username === username && emp.password === password
-    );
-    if (found) {
-      const empUser = { ...found, role: "employee" };
-      setAuthUser(empUser);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Invalid credentials");
+        return;
+      }
+      if (data.role !== "employee") {
+        setError("Use Admin login for admin accounts");
+        return;
+      }
+      localStorage.setItem("employee_token", data.token || "");
       localStorage.setItem("role", "employee");
-      localStorage.setItem("currentEmployee", JSON.stringify(found));
+      localStorage.setItem("currentEmployee", JSON.stringify({ username: data.username || username }));
+      setAuthUser({ username: data.username || username, role: "employee" });
       navigate("/employee");
-    } else {
-      setError("Invalid Employee credentials");
+    } catch {
+      setError("Login failed");
     }
   };
 

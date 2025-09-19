@@ -2,7 +2,9 @@ import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Login.css";
 
-function AdminLogin({ users, setAuthUser }) {
+const API_BASE = "https://chv-help-backend.vercel.app";
+
+function AdminLogin({ setAuthUser }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,16 +23,27 @@ function AdminLogin({ users, setAuthUser }) {
 
   const resetTilt = () => setTilt({ rx: 0, ry: 0 });
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-    if (username === "admin" && password === "1234") {
-      const adminUser = { username: "admin", role: "admin" };
-      setAuthUser(adminUser);
-      localStorage.setItem("role", "admin");
-      navigate("/admin");
-    } else {
-      setError("Invalid Admin credentials");
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem("admin_token", data.token || "1");
+        setAuthUser({ username: data.username || username, role: data.role || "admin" });
+        navigate("/admin");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || "Invalid credentials");
+      }
+    } catch {
+      setError("Login failed");
     }
   };
 

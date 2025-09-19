@@ -1,97 +1,119 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/Employee.css";
+
+const API_BASE = "https://chv-help-backend.vercel.app";
 
 function EmployeeDashboard() {
   const navigate = useNavigate();
   const [employee] = useState(JSON.parse(localStorage.getItem("currentEmployee")));
-  const [data, setData] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [activeFile, setActiveFile] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [activeFile, setActiveFile] = useState(null);
   const [showReason, setShowReason] = useState(false);
-  const [pendingAction, setPendingAction] = useState({ index: null, status: null, reason: "" });
+  const [pendingAction, setPendingAction] = useState({ recordId: null, status: null, reason: "" });
+  const token = localStorage.getItem("employee_token");
+
+  const authHeader = () => (token ? { Authorization: `Bearer ${token}` } : {});
 
   useEffect(() => {
-    const ds = JSON.parse(localStorage.getItem(`excelData_${employee?.username}`)) || [];
-    setData(ds);
-    setActiveFile(ds.length ? { id: "default", name: "Assigned Dataset" } : null);
-  }, [employee?.username]);
+    async function load() {
+      if (!token) {
+        navigate("/");
+        return;
+      }
+      const res = await fetch(`${API_BASE}/api/employee/records`, {
+        method: "GET",
+        headers: { ...authHeader() },
+        credentials: "include"
+      });
+      if (res.ok) {
+        const body = await res.json();
+        setFiles(body.files || []);
+        const rows = (body.records || []).map((r) => ({
+          id: r.id,
+          file_id: r.file_id,
+          filename: r.filename,
+          data: r.data || {},
+          status: r.status || "",
+          reason: r.reason || "",
+          updated_at: r.updated_at
+        }));
+        setRecords(rows);
+        if (!activeFile) {
+          const first = (body.files || [])[0];
+          if (first) setActiveFile({ id: first.id, name: first.filename });
+        }
+      } else if (res.status === 401 || res.status === 403) {
+        navigate("/");
+      }
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
-  const files = useMemo(() => {
-    return activeFile ? [activeFile] : [];
-  }, [activeFile]);
+  const rowsForActiveFile = useMemo(() => {
+    if (!activeFile) return [];
+    return records.filter((r) => r.file_id === activeFile.id);
+  }, [records, activeFile]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return data.filter((row) => {
-      const statusOk = statusFilter === "All" ? true : (row.status || "") === statusFilter;
+    return rowsForActiveFile.filter((r) => {
+      const statusOk = statusFilter === "All" ? true : (r.status || "") === statusFilter;
       if (!q) return statusOk;
-      return (
-        Object.values(row).some((v) => String(v).toLowerCase().includes(q)) && statusOk
-      );
+      const values = Object.values(r.data || {});
+      const hit = values.some((v) => String(v).toLowerCase().includes(q));
+      return hit && statusOk;
     });
-  }, [data, search, statusFilter]);
+  }, [rowsForActiveFile, search, statusFilter]);
+
+  const columns = useMemo(() => {
+    const first = filtered[0];
+    if (!first) return [];
+    return Object.keys(first.data || {});
+  }, [filtered]);
 
   const stats = useMemo(() => {
-    const total = data.length;
-    const win = data.filter((r) => r.status === "Win").length;
-    const lose = data.filter((r) => r.status === "Lose").length;
-    const pending = data.filter((r) => r.status === "Pending").length;
+    const total = rowsForActiveFile.length;
+    const win = rowsForActiveFile.filter((r) => r.status === "Win").length;
+    const lose = rowsForActiveFile.filter((r) => r.status === "Lose").length;
+    const pending = rowsForActiveFile.filter((r) => r.status === "Pending").length;
     return { total, win, lose, pending };
-  }, [data]);
+  }, [rowsForActiveFile]);
 
   const handleLogout = () => {
     localStorage.removeItem("role");
     localStorage.removeItem("currentEmployee");
+    localStorage.removeItem("employee_token");
     navigate("/");
   };
 
-  const requestStatusChange = (index, status) => {
-    setPendingAction({ index, status, reason: "" });
+  const requestStatusChange = (recordId, status) => {
+    setPendingAction({ recordId, status, reason: "" });
     setShowReason(true);
   };
 
-  const applyStatus = () => {
-    const { index, status, reason } = pendingAction;
-    if (index === null || !status || !reason.trim()) return;
-    const updated = [...data];
-    updated[index] = { ...updated[index], status, reason };
-    setData(updated);
-    localStorage.setItem(`excelData_${employee.username}`, JSON.stringify(updated));
-    setShowReason(false);
-    setPendingAction({ index: null, status: null, reason: "" });
+  const applyStatus = async () => {
+    const { recordId, status, reason } = pendingAction;
+    if (!recordId || !status || !reason.trim()) return;
+    const res = await fetch(`${API_BASE}/api/employee/records/${recordId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      credentials: "include",
+      body: JSON.stringify({ status, reason })
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setRecords((prev) =>
+        prev.map((r) => (r.id === updated.id ? { ...r, status: updated.status, reason: updated.reason, updated_at: updated.updated_at } : r))
+      );
+      setShowReason(false);
+      setPendingAction({ recordId: null, status: null, reason: "" });
+    }
   };
-
-  const exportCsv = () => {
-    if (!filtered.length) return;
-    const cols = Object.keys(filtered[0]);
-    const csv = [
-      cols.join(","),
-      ...filtered.map((r) =>
-        cols
-          .map((c) => {
-            const val = r[c] ?? "";
-            const s = String(val).replace(/"/g, '""');
-            return `"${s}"`;
-          })
-          .join(",")
-      ),
-    ].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `records_${employee.username}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const columns = useMemo(() => {
-    if (!filtered.length) return [];
-    const keys = Object.keys(filtered[0]);
-    return keys;
-  }, [filtered]);
 
   return (
     <div className="e-wrap">
@@ -116,9 +138,9 @@ function EmployeeDashboard() {
                 <button
                   key={f.id}
                   className={`e-file ${activeFile?.id === f.id ? "is-active" : ""}`}
-                  onClick={() => setActiveFile(f)}
+                  onClick={() => setActiveFile({ id: f.id, name: f.filename })}
                 >
-                  <div className="e-file-name">{f.name}</div>
+                  <div className="e-file-name">{f.filename}</div>
                 </button>
               ))}
             </div>
@@ -163,7 +185,29 @@ function EmployeeDashboard() {
                 <option>Lose</option>
                 <option>Pending</option>
               </select>
-              <button className="e-btn" onClick={exportCsv}>Export CSV</button>
+              <button className="e-btn" onClick={() => {
+                if (!rowsForActiveFile.length) return;
+                const cols = [...(columns || []), "status", "reason"];
+                const csv = [
+                  cols.join(","),
+                  ...rowsForActiveFile.map((r) =>
+                    cols
+                      .map((c) => {
+                        const val = c === "status" ? r.status : c === "reason" ? r.reason : r.data?.[c] ?? "";
+                        const s = String(val).replace(/"/g, '""');
+                        return `"${s}"`;
+                      })
+                      .join(",")
+                  )
+                ].join("\n");
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `records_${employee?.username || "me"}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}>Export CSV</button>
             </div>
           </div>
 
@@ -185,10 +229,10 @@ function EmployeeDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((row, i) => (
-                    <tr key={i}>
+                  {filtered.map((row) => (
+                    <tr key={row.id}>
                       {columns.map((c, j) => (
-                        <td key={j}>{String(row[c] ?? "")}</td>
+                        <td key={j}>{String(row.data?.[c] ?? "")}</td>
                       ))}
                       <td>
                         <span
@@ -207,9 +251,9 @@ function EmployeeDashboard() {
                       </td>
                       <td className="e-reason">{row.reason || "-"}</td>
                       <td className="e-actions">
-                        <button className="e-btn e-btn-win" onClick={() => requestStatusChange(data.indexOf(row), "Win")}>Win</button>
-                        <button className="e-btn e-btn-lose" onClick={() => requestStatusChange(data.indexOf(row), "Lose")}>Lose</button>
-                        <button className="e-btn e-btn-pending" onClick={() => requestStatusChange(data.indexOf(row), "Pending")}>Pending</button>
+                        <button className="e-btn e-btn-win" onClick={() => requestStatusChange(row.id, "Win")}>Win</button>
+                        <button className="e-btn e-btn-lose" onClick={() => requestStatusChange(row.id, "Lose")}>Lose</button>
+                        <button className="e-btn e-btn-pending" onClick={() => requestStatusChange(row.id, "Pending")}>Pending</button>
                       </td>
                     </tr>
                   ))}
