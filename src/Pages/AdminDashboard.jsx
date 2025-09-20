@@ -14,6 +14,7 @@ function AdminDashboard() {
   const [pendingFile, setPendingFile] = useState(null);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
+  const [allocations, setAllocations] = useState([]);
   const fileInputRef = useRef(null);
 
   const notify = (m) => {
@@ -43,8 +44,26 @@ function AdminDashboard() {
     }
   }
 
+  async function fetchAllocations() {
+    const res = await fetch(`${API_BASE}/api/admin/files/allocations`, {
+      method: "GET",
+      credentials: "include",
+      headers: { ...authHeader() }
+    });
+    if (res.ok) {
+      const body = await res.json();
+      setAllocations(body.allocations || []);
+    } else if (res.status === 401 || res.status === 403) {
+      notify("Please login as admin");
+      navigate("/admin-login");
+    } else {
+      setAllocations([]);
+    }
+  }
+
   useEffect(() => {
     fetchEmployees();
+    fetchAllocations();
   }, []);
 
   const filteredEmployees = useMemo(() => {
@@ -55,10 +74,11 @@ function AdminDashboard() {
 
   const stats = useMemo(() => {
     const totalEmployees = employees.length;
-    const assignedCount = 0;
-    const totalRows = excelData.length;
+    const uniqueAssigned = new Set(allocations.map((a) => a.employeeId));
+    const assignedCount = uniqueAssigned.size;
+    const totalRows = allocations.reduce((sum, a) => sum + (Number(a.rows || 0) || 0), 0) || excelData.length;
     return { totalEmployees, assignedCount, totalRows };
-  }, [employees, excelData]);
+  }, [employees, allocations, excelData]);
 
   async function handleAddUser(e) {
     e.preventDefault();
@@ -115,6 +135,7 @@ function AdminDashboard() {
       setExcelData(json);
       setPendingFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      fetchAllocations();
     } else if (res.status === 401 || res.status === 403) {
       notify("Please login as admin");
       navigate("/admin-login");
@@ -155,6 +176,31 @@ function AdminDashboard() {
     setPendingFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     notify("Cleared");
+  }
+
+  async function deleteEmployee(id) {
+    const res = await fetch(`${API_BASE}/api/admin/employees/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { ...authHeader() }
+    });
+    if (res.ok) {
+      notify("Employee deleted");
+      if (selectedUser === id) {
+        setSelectedUser("");
+        setExcelData([]);
+        setPendingFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+      fetchEmployees();
+      fetchAllocations();
+    } else if (res.status === 401 || res.status === 403) {
+      notify("Please login as admin");
+      navigate("/admin-login");
+    } else {
+      const err = await res.json().catch(() => ({}));
+      notify(err.error || "Delete failed");
+    }
   }
 
   function handleLogout() {
@@ -213,14 +259,16 @@ function AdminDashboard() {
             <div className="a-list">
               {filteredEmployees.length === 0 && <div className="a-empty">No results</div>}
               {filteredEmployees.map((emp) => (
-                <button
-                  key={emp.id}
-                  className={`a-list-item ${selectedUser === emp.id ? "is-active" : ""}`}
-                  onClick={() => handleSelectUser(emp.id)}
-                >
-                  <div className="a-list-name">{emp.username}</div>
-                  <div className="a-list-meta">{emp.role}</div>
-                </button>
+                <div key={emp.id} className={`a-list-item ${selectedUser === emp.id ? "is-active" : ""}`}>
+                  <div className="a-list-block" onClick={() => handleSelectUser(emp.id)}>
+                    <div className="a-list-name">{emp.username}</div>
+                    <div className="a-list-meta">{emp.role}</div>
+                  </div>
+                  <div className="a-list-actions">
+                    <button className="a-btn a-btn-ghost a-btn-sm" onClick={() => handleSelectUser(emp.id)}>Select</button>
+                    <button className="a-btn a-btn-danger a-btn-sm" onClick={() => deleteEmployee(emp.id)}>Delete</button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -252,11 +300,7 @@ function AdminDashboard() {
                 <div className="a-label">File</div>
                 <div className="a-value">{pendingFile ? pendingFile.name : "-"}</div>
               </div>
-              <button
-                className="a-btn"
-                onClick={allocateFile}
-                disabled={!selectedUser || !pendingFile}
-              >
+              <button className="a-btn" onClick={allocateFile} disabled={!selectedUser || !pendingFile}>
                 Allocate
               </button>
             </div>
@@ -281,6 +325,37 @@ function AdminDashboard() {
                         {Object.keys(excelData[0]).map((k) => (
                           <td key={k}>{String(row[k] ?? "")}</td>
                         ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+          <div className="a-card">
+            <div className="a-card-title">File Allocations</div>
+            <div className="a-table-wrap">
+              {allocations.length === 0 ? (
+                <div className="a-empty-full">No allocations</div>
+              ) : (
+                <table className="a-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Employee ID</th>
+                      <th>File Name</th>
+                      <th>Uploaded At</th>
+                      <th>Rows</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allocations.map((a, i) => (
+                      <tr key={i}>
+                        <td>{a.employeeName || employees.find((e) => e.id === a.employeeId)?.username || a.employeeId}</td>
+                        <td>{a.employeeId}</td>
+                        <td>{a.filename || a.fileName || "-"}</td>
+                        <td>{a.uploadedAt ? new Date(a.uploadedAt).toLocaleString() : "-"}</td>
+                        <td>{a.rows ?? "-"}</td>
                       </tr>
                     ))}
                   </tbody>

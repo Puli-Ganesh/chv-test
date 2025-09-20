@@ -51,8 +51,7 @@ function EmployeeDashboard() {
       }
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, navigate, activeFile]);
 
   const rowsForActiveFile = useMemo(() => {
     if (!activeFile) return [];
@@ -113,6 +112,23 @@ function EmployeeDashboard() {
       setShowReason(false);
       setPendingAction({ recordId: null, status: null, reason: "" });
     }
+  };
+
+  const downloadActiveFile = async () => {
+    if (!activeFile) return;
+    const res = await fetch(`${API_BASE}/api/employee/files/${activeFile.id}/download`, {
+      method: "GET",
+      headers: { ...authHeader() },
+      credentials: "include"
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = activeFile.name || "assigned_file";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -185,29 +201,7 @@ function EmployeeDashboard() {
                 <option>Lose</option>
                 <option>Pending</option>
               </select>
-              <button className="e-btn" onClick={() => {
-                if (!rowsForActiveFile.length) return;
-                const cols = [...(columns || []), "status", "reason"];
-                const csv = [
-                  cols.join(","),
-                  ...rowsForActiveFile.map((r) =>
-                    cols
-                      .map((c) => {
-                        const val = c === "status" ? r.status : c === "reason" ? r.reason : r.data?.[c] ?? "";
-                        const s = String(val).replace(/"/g, '""');
-                        return `"${s}"`;
-                      })
-                      .join(",")
-                  )
-                ].join("\n");
-                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `records_${employee?.username || "me"}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}>Export CSV</button>
+              <button className="e-btn" onClick={downloadActiveFile} disabled={!activeFile}>Download File</button>
             </div>
           </div>
 
